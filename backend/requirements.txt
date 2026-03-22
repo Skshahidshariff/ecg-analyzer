@@ -1,0 +1,13 @@
+fastapi
+uvicorn
+pymongo
+passlib
+python-jose[cryptography]
+scikit-learn
+numpy
+opencv-python
+python-multipart
+scipy
+python-dotenv
+tensorflow
+reportlab

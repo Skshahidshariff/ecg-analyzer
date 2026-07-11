@@ -11,11 +11,29 @@ const LANGUAGES: { code: Language; name: string }[] = [
     { code: "fr", name: "Français" },
     { code: "de", name: "Deutsch" },
     { code: "pt", name: "Português" },
+    { code: "it", name: "Italiano" },
     { code: "hi", name: "हिन्दी" },
     { code: "zh", name: "中文" },
     { code: "ja", name: "日本語" },
+    { code: "ko", name: "한국어" },
     { code: "ru", name: "Русский" },
     { code: "ar", name: "العربية" },
+    { code: "tr", name: "Türkçe" },
+    { code: "th", name: "ไทย" },
+    { code: "vi", name: "Tiếng Việt" },
+    { code: "id", name: "Bahasa Indonesia" },
+    { code: "pl", name: "Polski" },
+    { code: "sv", name: "Svenska" },
+    { code: "nl", name: "Nederlands" },
+    { code: "el", name: "Ελληνικά" },
+    { code: "he", name: "עברית" },
+    { code: "uk", name: "Українська" },
+    { code: "fa", name: "فارسی" },
+    { code: "bn", name: "বাংলা" },
+    { code: "ta", name: "தமிழ்" },
+    { code: "te", name: "తెలుగు" },
+    { code: "kn", name: "ಕನ್ನಡ" },
+    { code: "ml", name: "മലയാളം" },
 ]
 
 export function GoogleTranslate() {
@@ -50,7 +68,7 @@ export function GoogleTranslate() {
             </button>
 
             {isOpen && (
-                <div className="absolute right-0 mt-2 w-48 bg-background border border-border rounded-lg shadow-lg z-50">
+                <div className="absolute right-0 mt-2 w-48 bg-background border border-border rounded-lg shadow-lg z-50 max-h-72 overflow-y-auto scrollbar-thin scrollbar-thumb-gray-400 scrollbar-track-gray-100 dark:scrollbar-thumb-gray-600 dark:scrollbar-track-gray-800">
                     {LANGUAGES.map((lang) => (
                         <button
                             key={lang.code}

@@ -243,11 +243,11 @@ export default function HistoryPage() {
 
                 {/* Search and Filter Section */}
                 <Card className="mb-8 p-6">
-                    <h2 className="text-lg font-medium mb-4">Search & Filter</h2>
+                    <h2 className="text-lg font-medium mb-4">{t.history?.description}</h2>
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-4">
                         {/* Search Input */}
                         <div>
-                            <label className="text-sm font-medium text-muted-foreground mb-2 block">Search</label>
+                            <label className="text-sm font-medium text-muted-foreground mb-2 block">{t.history?.action}</label>
                             <input
                                 type="text"
                                 placeholder="Search by name or file..."
@@ -259,7 +259,7 @@ export default function HistoryPage() {
 
                         {/* Favorites Filter */}
                         <div>
-                            <label className="text-sm font-medium text-muted-foreground mb-2 block">View</label>
+                            <label className="text-sm font-medium text-muted-foreground mb-2 block">{t.history?.viewAllActions}</label>
                             <div className="flex items-center h-10">
                                 <label className="flex items-center gap-2 cursor-pointer">
                                     <input
@@ -275,13 +275,13 @@ export default function HistoryPage() {
 
                         {/* Rhythm Filter */}
                         <div>
-                            <label className="text-sm font-medium text-muted-foreground mb-2 block">Rhythm Type</label>
+                            <label className="text-sm font-medium text-muted-foreground mb-2 block">{t.history?.rhythm}</label>
                             <select
                                 value={rhythmFilter}
                                 onChange={(e) => setRhythmFilter(e.target.value)}
                                 className="w-full px-3 py-2 border border-input rounded-md bg-background text-sm"
                             >
-                                <option value="">All Types</option>
+                                <option value="">{t.history?.allActions}</option>
                                 {rhythmTypes.map((type) => (
                                     <option key={type} value={type}>{type}</option>
                                 ))}
@@ -290,7 +290,7 @@ export default function HistoryPage() {
 
                         {/* Min Confidence */}
                         <div>
-                            <label className="text-sm font-medium text-muted-foreground mb-2 block">Min Confidence (%)</label>
+                            <label className="text-sm font-medium text-muted-foreground mb-2 block">{t.history?.confidence} (%)</label>
                             <input
                                 type="number"
                                 placeholder="Min confidence"
@@ -304,7 +304,7 @@ export default function HistoryPage() {
 
                         {/* Max Confidence */}
                         <div>
-                            <label className="text-sm font-medium text-muted-foreground mb-2 block">Max Confidence (%)</label>
+                            <label className="text-sm font-medium text-muted-foreground mb-2 block">{t.history?.confidence} (%)</label>
                             <input
                                 type="number"
                                 placeholder="Max confidence"
@@ -318,7 +318,7 @@ export default function HistoryPage() {
 
                         {/* Start Date */}
                         <div>
-                            <label className="text-sm font-medium text-muted-foreground mb-2 block">From Date</label>
+                            <label className="text-sm font-medium text-muted-foreground mb-2 block">{t.history?.fromDate}</label>
                             <input
                                 type="date"
                                 value={startDate}
@@ -329,7 +329,7 @@ export default function HistoryPage() {
 
                         {/* End Date */}
                         <div>
-                            <label className="text-sm font-medium text-muted-foreground mb-2 block">To Date</label>
+                            <label className="text-sm font-medium text-muted-foreground mb-2 block">{t.history?.toDate}</label>
                             <input
                                 type="date"
                                 value={endDate}
@@ -346,7 +346,7 @@ export default function HistoryPage() {
                             variant="outline"
                             size="sm"
                         >
-                            Clear Filters
+                            {t.history?.clearFilters}
                         </Button>
                     )}
                     
@@ -379,7 +379,7 @@ export default function HistoryPage() {
                     </div>
                 ) : filteredPredictions.length === 0 ? (
                     <div className="text-center py-20">
-                        <p className="text-muted-foreground text-lg">No predictions match your filters.</p>
+                        <p className="text-muted-foreground text-lg">{t.history?.noFilterResults}</p>
                     </div>
                 ) : (
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">

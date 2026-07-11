@@ -15,7 +15,7 @@ export function ECGAnalyzer() {
   const [analyzing, setAnalyzing] = useState(false)
   const [result, setResult] = useState<any>(null)
   const [fileName, setFileName] = useState<string | null>(null)
-  const { t } = useLanguage()
+  const { t, language } = useLanguage()
 
   // Restore state from sessionStorage on component mount
   useEffect(() => {
@@ -89,6 +89,9 @@ export function ECGAnalyzer() {
         formData.append("user_email", email)
         formData.append("username", username)
       }
+
+      // Include selected language
+      formData.append("language", language)
 
       // Get user's timezone offset (in minutes from UTC)
       const timezoneOffset = new Date().getTimezoneOffset()

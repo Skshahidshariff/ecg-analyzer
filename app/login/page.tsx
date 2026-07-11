@@ -15,6 +15,7 @@ import {
     CardTitle,
 } from "@/components/ui/card"
 import { useLanguage } from "@/components/language-context"
+import { useAuth } from "@/components/auth-context"
 
 export default function LoginPage() {
     const router = useRouter()
@@ -24,6 +25,7 @@ export default function LoginPage() {
     const [loading, setLoading] = useState(false)
     const [showPassword, setShowPassword] = useState(false)
     const { t } = useLanguage()
+    const { login } = useAuth()
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault()
@@ -31,7 +33,8 @@ export default function LoginPage() {
         setLoading(true)
 
         try {
-            const res = await fetch("http://localhost:8000/login", {
+            const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"
+            const res = await fetch(`${apiUrl}/login`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ email, password }),
@@ -44,9 +47,7 @@ export default function LoginPage() {
             }
 
             // Since the backend doesn't return a token yet, we'll store the user context locally
-            localStorage.setItem("username", data.username)
-            localStorage.setItem("email", data.email)
-            localStorage.setItem("role", data.role || "user")
+            login(data.username, data.email, data.role || "user")
 
             // Redirect admin to admin dashboard, others to home
             if (data.role === "admin") {
@@ -92,6 +93,9 @@ export default function LoginPage() {
                         <div className="space-y-2">
                             <div className="flex items-center justify-between">
                                 <label htmlFor="password">{t.auth.password}</label>
+                                <Link href="/forgot-password" className="text-xs text-primary hover:underline">
+                                    {t.auth.forgotPassword}
+                                </Link>
                             </div>
                             <div className="relative">
                                 <Input

@@ -5,46 +5,16 @@ import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { useLanguage } from "@/components/language-context"
+import { useAuth } from "@/components/auth-context"
 import { GoogleTranslate } from "@/components/google-translate"
 import { LogOut, Menu, X, User, Heart } from "lucide-react"
 
 export function Navbar() {
   const router = useRouter()
-  const [username, setUsername] = useState<string | null>(null)
-  const [profileImage, setProfileImage] = useState<string | null>(null)
-  const [userEmail, setUserEmail] = useState<string | null>(null)
-  const [userRole, setUserRole] = useState<string | null>(null)
+  const { username, profileImage, role, isLoggedIn, logout } = useAuth()
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const [profileMenuOpen, setProfileMenuOpen] = useState(false)
   const { t } = useLanguage()
-
-  useEffect(() => {
-    const storedUsername = localStorage.getItem("username")
-    const storedEmail = localStorage.getItem("email")
-    const storedRole = localStorage.getItem("role")
-    setUsername(storedUsername)
-    setUserEmail(storedEmail)
-    setUserRole(storedRole)
-
-    // Fetch profile image if user is logged in
-    if (storedEmail) {
-      fetchProfileImage(storedEmail)
-    }
-  }, [])
-
-  const fetchProfileImage = async (email: string) => {
-    try {
-      const response = await fetch(`http://127.0.0.1:8000/user/profile/${email}`)
-      if (response.ok) {
-        const data = await response.json()
-        if (data.profile_image) {
-          setProfileImage(data.profile_image)
-        }
-      }
-    } catch (error) {
-      console.error("Error fetching profile image:", error)
-    }
-  }
 
   // Close profile menu when clicking outside
   useEffect(() => {
@@ -63,11 +33,7 @@ export function Navbar() {
   }, [profileMenuOpen])
 
   const handleLogout = () => {
-    localStorage.removeItem("username")
-    localStorage.removeItem("email")
-    localStorage.removeItem("role")
-    setUsername(null)
-    setUserRole(null)
+    logout()
     router.push("/")
     setMobileMenuOpen(false)
   }
@@ -85,9 +51,9 @@ export function Navbar() {
 
         {/* Desktop Navigation */}
         <div className="hidden md:flex items-center gap-1">
-          {username ? (
+          {isLoggedIn ? (
             <>
-              {userRole !== "admin" ? (
+              {role !== "admin" ? (
                 <>
                   {/* Analysis Section */}
                   <Button variant="ghost" size="sm" asChild>
@@ -116,7 +82,7 @@ export function Navbar() {
               ) : null}
 
               {/* Admin Section */}
-              {userRole === "admin" && (
+              {role === "admin" && (
                 <Button variant="ghost" size="sm" asChild>
                   <Link href="/admin">Admin</Link>
                 </Button>
@@ -131,7 +97,7 @@ export function Navbar() {
 
           {/* Desktop Login/Logout */}
           <div className="hidden md:flex items-center gap-2">
-            {username ? (
+            {isLoggedIn ? (
               <>
                 {/* Profile Dropdown */}
                 <div className="relative">
@@ -208,7 +174,7 @@ export function Navbar() {
       {mobileMenuOpen && (
         <div className="md:hidden bg-background border-t">
           <div className="max-w-7xl mx-auto px-4 py-4 space-y-2">
-            {username ? (
+            {isLoggedIn ? (
               <>
                 <div className="px-3 py-3 rounded-lg bg-muted text-sm font-medium flex flex-col items-center gap-2">
                   {profileImage ? (
@@ -219,7 +185,7 @@ export function Navbar() {
                     />
                   ) : (
                     <div className="w-12 h-12 bg-primary rounded-full flex items-center justify-center text-white text-lg font-bold">
-                      {username.charAt(0).toUpperCase()}
+                      {username?.charAt(0).toUpperCase()}
                     </div>
                   )}
                   <Button
@@ -261,7 +227,7 @@ export function Navbar() {
                   <Button variant="ghost" size="sm" asChild className="w-full justify-start" onClick={() => setMobileMenuOpen(false)}>
                     <Link href="/feedback">Send Feedback</Link>
                   </Button>
-                  {userRole === "admin" && (
+                  {role === "admin" && (
                     <Button variant="ghost" size="sm" asChild className="w-full justify-start" onClick={() => setMobileMenuOpen(false)}>
                       <Link href="/admin">Admin</Link>
                     </Button>

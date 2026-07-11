@@ -151,15 +151,15 @@ export default function ActivityPage() {
                     <Button variant="ghost" size="sm" asChild className="mb-4">
                         <Link href="/">
                             <ArrowLeft className="mr-2 h-4 w-4" />
-                            Back to Home
+                            {t.activity?.backToHome}
                         </Link>
                     </Button>
                     <div className="flex items-center gap-3 mb-2">
                         <ActivitySquare className="h-8 w-8 text-primary" />
-                        <h1 className="text-4xl font-light">Activity Log</h1>
+                        <h1 className="text-4xl font-light">{t.activity?.title}</h1>
                     </div>
                     <p className="text-muted-foreground">
-                        View your account activity and interactions
+                        {t.activity?.description}
                     </p>
                 </div>
 
@@ -170,7 +170,7 @@ export default function ActivityPage() {
                             <CardContent className="p-6">
                                 <div className="flex items-center justify-between">
                                     <div>
-                                        <p className="text-sm text-muted-foreground">Total Actions</p>
+                                        <p className="text-sm text-muted-foreground">{t.activity?.totalActions}</p>
                                         <p className="text-3xl font-bold mt-2">{stats.totalActions}</p>
                                     </div>
                                     <Zap className="h-8 w-8 text-primary opacity-50" />
@@ -182,7 +182,7 @@ export default function ActivityPage() {
                             <CardContent className="p-6">
                                 <div className="flex items-center justify-between">
                                     <div>
-                                        <p className="text-sm text-muted-foreground">Today's Actions</p>
+                                        <p className="text-sm text-muted-foreground">{t.activity?.todayActions}</p>
                                         <p className="text-3xl font-bold mt-2">{stats.todayActions}</p>
                                     </div>
                                     <TrendingUp className="h-8 w-8 text-green-500 opacity-50" />
@@ -193,7 +193,7 @@ export default function ActivityPage() {
                         <Card className="md:col-span-2">
                             <CardContent className="p-6">
                                 <div>
-                                    <p className="text-sm text-muted-foreground">Most Common Action</p>
+                                    <p className="text-sm text-muted-foreground">{t.activity?.mostCommonAction}</p>
                                     <p className="text-2xl font-bold mt-2">
                                         {getActionLabel(stats.mostCommonAction || "")}
                                     </p>
@@ -208,16 +208,16 @@ export default function ActivityPage() {
 
                 {/* Filter Section */}
                 <Card className="mb-8 p-6">
-                    <h2 className="text-lg font-medium mb-4">Filter Activities</h2>
+                    <h2 className="text-lg font-medium mb-4">{t.activity?.filterByAction}</h2>
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
                         <div>
-                            <label className="text-sm font-medium text-muted-foreground mb-2 block">Action Type</label>
+                            <label className="text-sm font-medium text-muted-foreground mb-2 block">{t.activity?.action}</label>
                             <select
                                 value={actionFilter}
                                 onChange={(e) => setActionFilter(e.target.value)}
                                 className="w-full px-3 py-2 border border-input rounded-md bg-background text-sm"
                             >
-                                <option value="">All Actions</option>
+                                <option value="">{t.activity?.allActions}</option>
                                 {Object.entries(ACTION_LABELS).map(([key, label]) => (
                                     <option key={key} value={key}>{label}</option>
                                 ))}
@@ -225,7 +225,7 @@ export default function ActivityPage() {
                         </div>
 
                         <div>
-                            <label className="text-sm font-medium text-muted-foreground mb-2 block">From Date</label>
+                            <label className="text-sm font-medium text-muted-foreground mb-2 block">{t.activity?.fromDate}</label>
                             <input
                                 type="date"
                                 value={startDate}
@@ -235,7 +235,7 @@ export default function ActivityPage() {
                         </div>
 
                         <div>
-                            <label className="text-sm font-medium text-muted-foreground mb-2 block">To Date</label>
+                            <label className="text-sm font-medium text-muted-foreground mb-2 block">{t.activity?.toDate}</label>
                             <input
                                 type="date"
                                 value={endDate}
@@ -251,7 +251,7 @@ export default function ActivityPage() {
                             variant="outline"
                             size="sm"
                         >
-                            Clear Filters
+                            {t.activity?.clearFilters}
                         </Button>
                     )}
                     
@@ -264,7 +264,7 @@ export default function ActivityPage() {
                 {loading ? (
                     <div className="flex flex-col items-center justify-center py-20">
                         <Loader2 className="h-12 w-12 animate-spin text-primary mb-4" />
-                        <p className="text-muted-foreground">Loading activity log...</p>
+                        <p className="text-muted-foreground">{t.activity?.loading}</p>
                     </div>
                 ) : error ? (
                     <div className="text-center py-20">
@@ -275,14 +275,14 @@ export default function ActivityPage() {
                         <div className="w-20 h-20 bg-muted rounded-2xl flex items-center justify-center mx-auto mb-6">
                             <ActivitySquare className="w-10 h-10 text-muted-foreground" />
                         </div>
-                        <h2 className="text-2xl font-light mb-2">No Activities Yet</h2>
+                        <h2 className="text-2xl font-light mb-2">{t.activity?.noActivities}</h2>
                         <p className="text-muted-foreground mb-8">
-                            Your activities will appear here
+                            {t.activity?.noActivitiesDesc}
                         </p>
                     </div>
                 ) : filteredActivities.length === 0 ? (
                     <div className="text-center py-20">
-                        <p className="text-muted-foreground text-lg">No activities match your filters.</p>
+                        <p className="text-muted-foreground text-lg">{t.activity?.noFilterResults}</p>
                     </div>
                 ) : (
                     <div className="space-y-3">

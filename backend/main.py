@@ -5,7 +5,7 @@ from pydantic import BaseModel
 from pymongo import MongoClient
 from bson import ObjectId
 from passlib.context import CryptContext
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 import random
 import numpy as np
 import cv2
@@ -14,6 +14,11 @@ import base64
 from dotenv import load_dotenv
 import tensorflow as tf
 from tensorflow import keras
+import smtplib
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
+import secrets
+from tensorflow import keras
 from io import BytesIO
 from reportlab.lib.pagesizes import letter, A4
 from reportlab.lib import colors
@@ -21,6 +26,7 @@ from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.units import inch
 from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, PageBreak
 from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_RIGHT
+from clinical_summaries import get_clinical_summary_for_language
 
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -60,6 +66,7 @@ db = client["ecg"]
 users_collection = db["users"]
 predictions_collection = db["predictions"]
 activity_collection = db["activity_log"]
+otp_collection = db["otp_tokens"]
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
@@ -78,6 +85,65 @@ def log_activity(user_email: str, action: str, details: dict = None):
         print(f"Failed to log activity: {str(e)}")
 
 
+# Email Configuration and Functions
+SMTP_SERVER = "smtp.gmail.com"
+SMTP_PORT = 587
+SENDER_EMAIL = os.getenv("SENDER_EMAIL", "")
+SENDER_PASSWORD = os.getenv("SENDER_PASSWORD", "")
+DEV_MODE = os.getenv("DEV_MODE", "true").lower() == "true"
+
+def send_otp_email(recipient_email: str, otp: str) -> bool:
+    """Send OTP to user email using Gmail SMTP (free service)"""
+    # In development mode, just print and return True (for testing)
+    if DEV_MODE:
+        print(f"[DEV MODE] OTP for {recipient_email}: {otp}")
+        return True
+    
+    # If no email credentials, log warning and return True for testing
+    if not SENDER_EMAIL or not SENDER_PASSWORD:
+        print(f"[WARNING] Email credentials not configured. OTP for {recipient_email}: {otp}")
+        return True
+    
+    try:
+        # Create message
+        message = MIMEMultipart("alternative")
+        message["Subject"] = "ECG Analyzer - Password Reset OTP"
+        message["From"] = SENDER_EMAIL
+        message["To"] = recipient_email
+        
+        # Email body
+        text = f"Your OTP for password reset is: {otp}\n\nThis OTP is valid for 10 minutes.\n\nDo not share this OTP with anyone."
+        html = f"""\
+        <html>
+            <body>
+                <h2>ECG Analyzer - Password Reset</h2>
+                <p>Your OTP for password reset is:</p>
+                <h1 style="color: #007bff; font-size: 48px; letter-spacing: 5px; text-align: center;">{otp}</h1>
+                <p style="color: #666;">This OTP is valid for 10 minutes.</p>
+                <p style="color: #999;">Do not share this OTP with anyone.</p>
+            </body>
+        </html>
+        """
+        
+        part1 = MIMEText(text, "plain")
+        part2 = MIMEText(html, "html")
+        message.attach(part1)
+        message.attach(part2)
+        
+        # Send email
+        with smtplib.SMTP(SMTP_SERVER, SMTP_PORT) as server:
+            server.starttls()
+            server.login(SENDER_EMAIL, SENDER_PASSWORD)
+            server.sendmail(SENDER_EMAIL, recipient_email, message.as_string())
+        
+        print(f"[EMAIL] OTP sent successfully to {recipient_email}")
+        return True
+        
+    except Exception as e:
+        print(f"[EMAIL ERROR] Failed to send OTP to {recipient_email}: {str(e)}")
+        return False
+
+
 def is_admin(email: str | None):
     if not email:
         return False
@@ -92,6 +158,17 @@ class UserCreate(BaseModel):
 class UserLogin(BaseModel):
     email: str
     password: str
+
+class ForgotPasswordRequest(BaseModel):
+    email: str
+
+class VerifyOTPRequest(BaseModel):
+    email: str
+    otp: str
+
+class ResetPasswordRequest(BaseModel):
+    email: str
+    new_password: str
 
 def hash_password(password: str):
     return pwd_context.hash(password)
@@ -129,6 +206,138 @@ async def login(user: UserLogin):
         "email": db_user["email"],
         "role": db_user.get("role", "user")
     }
+
+@app.post("/forgot-password")
+async def forgot_password(request: ForgotPasswordRequest):
+    """Generate and send OTP for password reset"""
+    try:
+        # Check if user exists
+        user = users_collection.find_one({"email": request.email})
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found")
+        
+        # Generate 4-digit OTP
+        otp = str(random.randint(1000, 9999))
+        
+        # Store OTP in database with expiration (10 minutes)
+        otp_doc = {
+            "email": request.email,
+            "otp": otp,
+            "created_at": datetime.now(timezone.utc),
+            "expires_at": datetime.now(timezone.utc) + timedelta(minutes=10)
+        }
+        
+        # Remove any previous OTP for this email
+        otp_collection.delete_many({"email": request.email})
+        
+        # Insert new OTP
+        otp_collection.insert_one(otp_doc)
+        
+        # Send OTP via email
+        email_sent = send_otp_email(request.email, otp)
+        
+        if not email_sent:
+            raise HTTPException(status_code=500, detail="Failed to send OTP. Please try again.")
+        
+        log_activity(request.email, "forgot_password_requested")
+        
+        # Return response with OTP in dev mode for testing
+        response = {
+            "message": "OTP sent to your email",
+            "detail": "Check your email for the 4-digit code"
+        }
+        
+        if DEV_MODE:
+            response["otp_for_testing"] = otp
+        
+        return response
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"[ERROR in forgot_password] {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
+
+@app.post("/verify-otp")
+async def verify_otp(request: VerifyOTPRequest):
+    """Verify OTP and return token for password reset"""
+    try:
+        # Find OTP document
+        otp_doc = otp_collection.find_one({
+            "email": request.email,
+            "otp": request.otp
+        })
+        
+        if not otp_doc:
+            raise HTTPException(status_code=400, detail="Invalid OTP")
+        
+        # Check if OTP is expired (convert to timezone-aware for comparison)
+        current_time = datetime.now(timezone.utc)
+        expires_at = otp_doc["expires_at"]
+        
+        # If expires_at is naive, assume it's UTC
+        if expires_at.tzinfo is None:
+            expires_at = expires_at.replace(tzinfo=timezone.utc)
+        
+        if current_time > expires_at:
+            otp_collection.delete_one({"_id": otp_doc["_id"]})
+            raise HTTPException(status_code=400, detail="OTP has expired")
+        
+        # OTP is valid
+        log_activity(request.email, "otp_verified")
+        
+        return {
+            "message": "OTP verified successfully",
+            "token": str(otp_doc["_id"]),  # Return token for reference
+            "detail": "You can now reset your password"
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"[ERROR in verify_otp] {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
+
+@app.post("/reset-password")
+async def reset_password(request: ResetPasswordRequest):
+    """Reset user password after OTP verification"""
+    try:
+        # Check if user exists
+        user = users_collection.find_one({"email": request.email})
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found")
+        
+        # Check if there's a valid recent OTP verification for this email
+        otp_doc = otp_collection.find_one({
+            "email": request.email,
+            "expires_at": {"$gt": datetime.now(timezone.utc)}
+        })
+        
+        if not otp_doc:
+            raise HTTPException(status_code=400, detail="OTP verification required. Please verify OTP first.")
+        
+        # Update password
+        users_collection.update_one(
+            {"email": request.email},
+            {"$set": {
+                "password": request.new_password,
+                "updated_at": datetime.now(timezone.utc)
+            }}
+        )
+        
+        # Delete used OTP
+        otp_collection.delete_one({"_id": otp_doc["_id"]})
+        
+        log_activity(request.email, "password_reset", {"detail": "Password reset successfully"})
+        
+        return {
+            "message": "Password reset successfully",
+            "detail": "You can now login with your new password"
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"[ERROR in reset_password] {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
 
 @app.post("/user/update-profile")
 async def update_profile(data: dict):
@@ -199,9 +408,10 @@ async def get_profile(email: str):
 # ECG Analysis Logic
 # --------------------------------------------------------------------------
 
-# Load TensorFlow/Keras Model
+# Load TensorFlow/Keras Models
 BACKEND_DIR = os.path.dirname(os.path.abspath(__file__))
 MODEL_PATH = os.path.join(BACKEND_DIR, "model.h5")
+CLASSIFIER_PATH = os.path.join(BACKEND_DIR, "ecg_classifier.h5")
 
 print("Loading ECG classification model...")
 try:
@@ -210,6 +420,19 @@ try:
 except Exception as e:
     print(f"✗ Failed to load ECG model: {e}")
     model = None
+
+# Load binary ECG/Non-ECG classifier (if available)
+print("Loading binary ECG/Non-ECG classifier model...")
+ecg_classifier = None
+try:
+    if os.path.exists(CLASSIFIER_PATH):
+        ecg_classifier = keras.models.load_model(CLASSIFIER_PATH)
+        print(f"✓ ECG classifier (binary) loaded successfully from {CLASSIFIER_PATH}")
+    else:
+        print(f"⚠ ECG classifier not found at {CLASSIFIER_PATH}. Set CLASSIFIER_MODE='binary' in model.py to train it.")
+except Exception as e:
+    print(f"✗ Failed to load ECG classifier: {e}")
+    ecg_classifier = None
 
 # Load Haar Cascade for face detection
 cascade_path = cv2.data.haarcascades + 'haarcascade_frontalface_default.xml'
@@ -271,6 +494,114 @@ def predict_ecg_with_model(image_bytes):
     except Exception as e:
         print(f"[ERROR] Model prediction failed: {e}")
         raise
+
+# ========================================================
+# ECG vs NON-ECG CLASSIFICATION (BINARY CLASSIFIER)
+# ========================================================
+def is_ecg_image(image_bytes):
+    """
+    Binary classification to determine if uploaded image is ECG or Non-ECG.
+    Returns: (is_ecg: bool, confidence: float)
+    
+    If binary classifier not available, returns (None, 0) to skip this check.
+    """
+    if ecg_classifier is None:
+        print("[INFO] Binary ECG classifier not loaded. Skipping ECG/Non-ECG check.")
+        return None, 0
+    
+    try:
+        # Decode and preprocess image
+        nparr = np.frombuffer(image_bytes, np.uint8)
+        img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+        
+        if img is None:
+            raise ValueError("Could not decode image")
+        
+        # Resize to model input dimensions (240x240)
+        img_resized = cv2.resize(img, (240, 240))
+        img_rgb = cv2.cvtColor(img_resized, cv2.COLOR_BGR2RGB)
+        img_normalized = img_rgb / 255.0
+        img_batch = np.expand_dims(img_normalized, axis=0)
+        
+        # Make prediction with binary classifier
+        predictions = ecg_classifier.predict(img_batch, verbose=0)
+        
+        # For binary classification: [0] = probability of Non-ECG, [1] = probability of ECG
+        # Get the predicted class (0 = Non-ECG, 1 = ECG)
+        predicted_class = np.argmax(predictions[0])
+        confidence = float(predictions[0][predicted_class])
+        ecg_prob = float(predictions[0][1])
+        non_ecg_prob = float(predictions[0][0])
+        
+        is_ecg = bool(predicted_class == 1)
+        
+        print(f"[Binary Classification] ECG: {is_ecg} (confidence: {confidence:.2%})")
+        print(f"  Probabilities - Non-ECG: {non_ecg_prob:.2%}, ECG: {ecg_prob:.2%}")
+        
+        # Only reject if very confident it's Non-ECG (>80% confidence)
+        # Allow ambiguous cases to proceed to detailed analysis
+        if non_ecg_prob > 0.80:
+            is_ecg = False
+        else:
+            is_ecg = True
+        
+        return is_ecg, confidence
+        
+    except Exception as e:
+        print(f"[ERROR] Binary classifier prediction failed: {e}")
+        return None, 0
+        
+        return is_ecg, confidence
+        
+    except Exception as e:
+        print(f"[ERROR] Binary classifier prediction failed: {e}")
+        return None, 0
+
+# ========================================================
+# FACE & PERSON DETECTION (to reject non-ECG images)
+# ========================================================
+def detect_faces_and_people(image_bytes):
+    """
+    Detect faces and people in the image.
+    Returns: (has_face: bool, has_person: bool)
+    
+    If faces/people detected → likely NOT an ECG image
+    """
+    try:
+        # Decode image
+        nparr = np.frombuffer(image_bytes, np.uint8)
+        img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+        
+        if img is None:
+            return False, False
+        
+        # Resize for faster detection
+        img_small = cv2.resize(img, (640, 480))
+        gray = cv2.cvtColor(img_small, cv2.COLOR_BGR2GRAY)
+        
+        # Detect faces using Haar Cascade - more strict parameters
+        faces = face_cascade.detectMultiScale(gray, scaleFactor=1.05, minNeighbors=8, minSize=(50, 50))
+        has_face = len(faces) > 0  # Any face detected
+        
+        if has_face:
+            print(f"[Face Detection] ⚠ Found {len(faces)} face(s) in image - REJECTING")
+        
+        # Detect people using HOG detector - more strict (require multiple detections)
+        # HOG can be sensitive to ECG waveforms, so only reject if MULTIPLE people detected
+        people = hog_detector.detectMultiScale(img_small, winStride=(8, 8), padding=(16, 16), scale=1.05)
+        has_person = len(people) > 2  # Require at least 3 detections to confirm person
+        
+        if len(people) > 0:
+            print(f"[Person Detection] Found {len(people)} potential person/people (threshold: 3+)")
+        
+        if has_person:
+            print(f"[Person Detection] ⚠ REJECTING - Likely a photo with person/people")
+        
+        return has_face, has_person
+        
+    except Exception as e:
+        print(f"[ERROR] Face/Person detection failed: {e}")
+        return False, False
 
 # ========================================================
 # GOOGLE GEMINI AI PREDICTION FUNCTION (DEPRECATED)
@@ -391,6 +722,7 @@ def extract_ecg_metrics_deep_learning(image_bytes):
                 pr_interval = max(80, min(300, int(predictions[0][1])))
                 qrs_duration = max(20, min(200, int(predictions[0][2])))
                 qtc = max(300, min(500, int(predictions[0][3])))
+                console.log(predictions)
                 
                 return {
                     "heartRate": f"{heart_rate} BPM",
@@ -2281,12 +2613,25 @@ def generate_clinical_assessment(metrics, diagnosis):
         return {"error": str(e), "clinical_notes": ["Unable to generate clinical assessment"]}
 
 
+def get_clinical_summary_for_language(diagnosis: str, language: str = "en") -> str:
+    """
+    Wrapper function that delegates to clinical_summaries module.
+    """
+    try:
+        from clinical_summaries import get_clinical_summary_for_language as get_summary
+        return get_summary(diagnosis, language)
+    except Exception as e:
+        print(f"Error getting clinical summary: {e}")
+        return "Analysis completed."
+
+
 @app.post("/predict")
 async def predict_ecg(
     request: Request,
     file: UploadFile = File(...),
     user_email: str = Form(None),
-    username: str = Form(None)
+    username: str = Form(None),
+    language: str = Form(default="en")
 ):
     if model is None:
         raise HTTPException(status_code=503, detail="ECG model not loaded. Please restart the server.")
@@ -2315,217 +2660,21 @@ async def predict_ecg(
             predicted_label = model_result.get("diagnosis", "Normal")
             confidence = float(model_result.get("confidence", 75)) / 100.0
             print(f"✓ TensorFlow model prediction successful: {predicted_label} (confidence: {confidence:.2%})")
+            
+            # ===== CONFIDENCE THRESHOLD CHECK (ECG validation) =====
+            # If confidence is very low on all predictions, it might not be an ECG image
+            MIN_CONFIDENCE_THRESHOLD = 0.70  # Minimum 70% confidence required
+            if confidence < MIN_CONFIDENCE_THRESHOLD:
+                print(f"\n[ECG CONFIDENCE CHECK FAILED] Model prediction confidence too low: {confidence:.2%}")
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Please upload a clear ECG image. Image quality or content not recognized ({confidence*100:.0f}% confidence)."
+                )
+        except HTTPException:
+            raise
         except Exception as e:
             print(f"[ERROR] Model prediction error: {e}")
             raise HTTPException(status_code=500, detail=f"Model prediction failed: {str(e)}")
-        
-        # Formatting specific message based on class - Beautifully formatted clinical summaries
-        summary_map = {
-            'Normal': """═════════════════════════════════════════════════════════════
-
-NORMAL SINUS RHYTHM - HEALTHY ECG
-
-═════════════════════════════════════════════════════════════
-
-""CLINICAL FINDINGS:
-
-• Heart Rate: Regular and within normal range (60-100 BPM)
-
-• P-Waves: Present, upright, and uniform
-
-• PR Interval: Normal duration (120-200ms)
-
-• QRS Complex: Normal duration (<120ms)
-
-• ST Segment: At isoelectric line
-
-• T-Waves: Upright and symmetric
-
-• Rhythm: No arrhythmias detected
-
-═════════════════════════════════════════════════════════════
-
-ASSESSMENT:
-
-• Your heart's electrical activity is normal and healthy.
-
-• All intervals and segments are within normal ranges.
-
-• Continue regular cardiovascular health maintenance.
-
-• Routine ECG screening recommended as per guidelines.
-
-═════════════════════════════════════════════════════════════""",
-            'Myocardial_Infarction': """═════════════════════════════════════════════════════════════
-
-ACUTE MYOCARDIAL INFARCTION DETECTED
-
-═════════════════════════════════════════════════════════════
-
-⚠️  [CRITICAL - REQUIRES IMMEDIATE EMERGENCY CARE]
-
-CLINICAL FINDINGS:
-
-• ST-Segment Elevation (≥1mm) in contiguous leads
-
-• Pathological Q waves indicating transmural infarction
-
-• T-Wave Inversion in affected territories
-
-• Reciprocal ST Depression in opposite leads
-
-• Possible QRS widening from conduction delays
-
-═════════════════════════════════════════════════════════════
-
-ASSESSMENT:
-
-• Evidence of acute myocardial ischemia/infarction detected.
-
-• This is a TIME-CRITICAL condition requiring immediate intervention.
-
-• This ECG finding is consistent with STEMI (ST-Elevation Myocardial Infarction).
-
-• Prognosis depends on time to intervention and extent of myocardial damage.
-
-═════════════════════════════════════════════════════════════
-
-IMMEDIATE ACTIONS REQUIRED:
-
-1. CALL EMERGENCY SERVICES (911) IMMEDIATELY
-
-2. Chew aspirin (325mg) if not allergic
-
-3. Rest and avoid exertion
-
-4. Transport to nearest PCI-capable facility
-
-5. Time of symptom onset is critical for treatment
-
-═════════════════════════════════════════════════════════════""",
-            'Abnormal_Heartbeat': """═════════════════════════════════════════════════════════════
-
-CARDIAC ARRHYTHMIA DETECTED
-
-═════════════════════════════════════════════════════════════
-
-⚠️  [REQUIRES CARDIOLOGY EVALUATION]
-
-CLINICAL FINDINGS:
-
-• Irregular heart rhythm present
-
-• Abnormal rate patterns or ectopic beats
-
-• Deviation from normal sinus rhythm
-
-• Abnormal P-wave morphology noted
-
-• Conduction pattern abnormalities
-
-══════════════"═══════════════════════════════════════════════
-
-POSSIBLE DIAGNOSES:
-
-• Premature Atrial Contractions (PACs)
-
-• Premature Ventricular Contractions (PVCs)
-
-• Atrial Fibrillation
-
-• Supraventricular Tachycardia (SVT)
-
-• Other conduction abnormalities
-
-═════════════════════════════════════════════════════════════
-
-ASSESSMENT:
-
-• Hemodynamic effects depend on rate and frequency of episodes.
-
-• Symptom severity may range from asymptomatic to symptomatic.
-
-• Treatment may include antiarrhythmic therapy or ablation procedure.
-
-═════════════════════════════════════════════════════════════
-
-RECOMMENDED ACTIONS:
-
-1. Schedule urgent cardiology consultation
-
-2. Start continuous monitoring (Holter monitor or event recorder)
-
-3. Avoid triggers (caffeine, stress)
-
-4. Report palpitations or syncope
-
-5. Consider EP study if indicated
-
-═════════════════════════════════════════════════════════════""",
-            'MI_history': """═════════════════════════════════════════════════════════════
-
-HISTORY OF MYOCARDIAL INFARCTION
-
-═════════════════════════════════════════════════════════════
-
-⚠️  [REQUIRES ONGOING CARDIOLOGY MANAGEMENT]
-
-CLINICAL FINDINGS:
-
-• Pathological Q waves in previous infarction territory
-
-• Persistent ST-T wave abnormalities
-
-• Evidence of myocardial scar tissue
-
-• Possible left ventricular remodeling
-
-• Risk profile for recurrent events
-
-═════════════════════════════════════════════════════════════
-
-ASSESSMENT:
-
-• Healed or chronic post-myocardial infarction pattern detected.
-
-• Pattern is consistent with old infarction with scar tissue formation.
-
-• Serial ECGs and monitoring are essential for long-term management.
-
-═════════════════════════════════════════════════════════════
-
-RISK FACTORS:
-
-• You are at increased risk for recurrent myocardial infarction.
-
-• Heart failure development is a concern.
-
-• Ventricular arrhythmias may occur.
-
-• Risk of sudden cardiac death exists.
-
-═════════════════════════════════════════════════════════════
-
-RECOMMENDED MANAGEMENT:
-
-1. Continue cardiology follow-up (every 3-6 months)
-
-2. Maintain evidence-based medications:
-   - Antiplatelet therapy (Aspirin +/- P2Y12 inhibitor)
-   - Beta-blocker for rate control
-   - ACE inhibitor or ARB for remodeling
-   - Statin for lipid management
-
-3. Cardiac rehabilitation program
-
-4. Lifestyle modifications (diet, exercise, stress management)
-
-5. Risk factor management (BP, diabetes, cholesterol)
-
-6. Regular functional assessment
-
-═════════════════════════════════════════════════════════════"""
-        }
         
         # Extract real ECG metrics from the image
         result_metrics = extract_ecg_metrics(contents)
@@ -2543,6 +2692,9 @@ RECOMMENDED MANAGEMENT:
         # Generate clinical assessment based on metrics
         clinical_assessment = generate_clinical_assessment(result_metrics, predicted_label)
         
+        # Get clinical summary in the selected language
+        clinical_summary = get_clinical_summary_for_language(predicted_label, language)
+        
         # Get YouTube suggestions based on diagnosis
         youtube_videos = get_youtube_suggestions(predicted_label)
         print(f"✓ YouTube resources retrieved: {len(youtube_videos)} videos found")
@@ -2550,7 +2702,7 @@ RECOMMENDED MANAGEMENT:
         result = {
             "rhythm": predicted_label.replace("_", " "),
             "confidence": f"{confidence * 100:.1f}%",
-            "summary": summary_map.get(predicted_label, "Analysis completed."),
+            "summary": clinical_summary,
             "heartRate": result_metrics["heartRate"],
             "intervals": {
                 "pr": result_metrics["pr"],

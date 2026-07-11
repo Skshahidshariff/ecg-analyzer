@@ -27,6 +27,9 @@ BATCH_SIZE = 32
 EPOCHS = 25
 DATA_PATH = "./datasets"
 MODEL_SAVE_NAME = 'model.h5'
+CLASSIFIER_MODE = "binary"  # Set to "binary" for ECG vs Non-ECG, "detailed" for multi-class ECG types
+# For binary mode: use ECG/ and Non_ECG/ folders
+# For detailed mode: use Normal/, Abnormal_Heartbeat/, Myocardial_Infarction/, MI_history/ folders
 
 # --------------------------------------------------------------------------
 # Helper Functions
@@ -60,6 +63,7 @@ def load_image(path):
 
 def main():
     logger.info("Starting ECG Analyzer Model Training Script...")
+    logger.info(f"Mode: {CLASSIFIER_MODE.upper()}")
     
     # ----------------------------------------------------------------------
     # 1. Dataset Validation
@@ -84,6 +88,19 @@ def main():
         return
 
     logger.info(f"Found {len(classes)} classes: {classes}")
+    
+    # Validate folder structure for binary mode
+    if CLASSIFIER_MODE == "binary":
+        expected_classes = {"ECG", "Non_ECG"}
+        actual_classes = set(classes)
+        # Filter to only binary classes, ignore others
+        binary_classes = [c for c in classes if c in expected_classes]
+        if len(binary_classes) != 2:
+            logger.error(f"Binary mode requires both 'ECG' and 'Non_ECG' folders")
+            logger.error(f"Found: {actual_classes}")
+            return
+        classes = sorted(binary_classes)
+        logger.info(f"Binary mode: Using only {classes}")
     
     # Create a map from class name to integer index
     label_map = {class_name: idx for idx, class_name in enumerate(classes)}
@@ -193,8 +210,14 @@ def main():
     test_loss, test_acc = model.evaluate(X_test, y_test, verbose=0)
     logger.info(f"Final Test Accuracy: {test_acc:.2%}")
 
-    logger.info(f"Saving trained model to '{MODEL_SAVE_NAME}'...")
-    model.save(MODEL_SAVE_NAME)
+    # Determine which model name to use based on mode
+    if CLASSIFIER_MODE == "binary":
+        model_name = 'ecg_classifier.h5'
+    else:
+        model_name = MODEL_SAVE_NAME
+    
+    logger.info(f"Saving trained model to '{model_name}'...")
+    model.save(model_name)
     logger.info("Execution finished successfully.")
 
 if __name__ == "__main__":

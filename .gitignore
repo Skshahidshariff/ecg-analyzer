@@ -1,6 +1,6 @@
 # See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
 #large file
-model.h5
+*.h5
 backend/datasets/
 
 # dependencies
